@@ -1,55 +1,61 @@
-const express = require("express");
-const app = express();
-const port = process.env.PORT || 5000;
+const express = require('express');
+const cors = require('cors');
+const { MongoClient, ServerApiVersion } = require('mongodb');
 require('dotenv').config();
-const cors = require("cors");
-const { MongoClient, ServerApiVersion, CURSOR_FLAGS } = require('mongodb');
+const port = process.env.PORT || 5000;
 
+const app = express();
+
+// middleware
 app.use(cors());
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.vbw8r.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
-async function run(){
-    try{
+async function run() {
+    try {
         const appointmentOptionCollection = client.db('doctorsPortal').collection('appointmentOptions');
         const bookingsCollection = client.db('doctorsPortal').collection('bookings');
 
-        app.get('/appointmentOptions',async(req,res)=>{
+        // Use Aggregate to query multiple collection and then merge data
+        app.get('/appointmentOptions', async (req, res) => {
             const date = req.query.date;
             const query = {};
             const options = await appointmentOptionCollection.find(query).toArray();
-            const bookingQuery = {appointmentDate: date};
+
+            // get the bookings of the provided date
+            const bookingQuery = { appointmentDate: date }
             const alreadyBooked = await bookingsCollection.find(bookingQuery).toArray();
-            options.forEach(option =>{
+
+            // code carefully :D
+            options.forEach(option => {
                 const optionBooked = alreadyBooked.filter(book => book.treatment === option.name);
-                const bookedSlots = optionBooked.map((book => book.slot));
-                const remainingSlots = option.slots.filter(slot => !bookedSlots.includes(slot));
-                option.slots = remainingSlots; 
+                const bookedSlots = optionBooked.map(book => book.slot);
+                const remainingSlots = option.slots.filter(slot => !bookedSlots.includes(slot))
+                option.slots = remainingSlots;
             })
             res.send(options);
-        })
+        });
 
-        app.get('/v2/appointmentOptions', async(req,res) =>{
+        app.get('/v2/appointmentOptions', async (req, res) => {
             const date = req.query.date;
             const options = await appointmentOptionCollection.aggregate([
                 {
-                    $lookup:
-                    {
-                      from: 'bookings',
-                      localField: 'name',
-                      foreignField:  'treatment',
-                      pipeline:[
-                        {
-                            $match: {
-                                $expr: {
-                                    $eq: ['$appointmentDate',date]
+                    $lookup: {
+                        from: 'bookings',
+                        localField: 'name',
+                        foreignField: 'treatment',
+                        pipeline: [
+                            {
+                                $match: {
+                                    $expr: {
+                                        $eq: ['$appointmentDate', date]
+                                    }
                                 }
                             }
-                        }
-                      ],
-                      as: 'booked',
+                        ],
+                        as: 'booked'
                     }
                 },
                 {
@@ -57,10 +63,10 @@ async function run(){
                         name: 1,
                         slots: 1,
                         booked: {
-                            $map:{
+                            $map: {
                                 input: '$booked',
-                                as: 'book', 
-                                in: '$book.slot'
+                                as: 'book',
+                                in: '$$book.slot'
                             }
                         }
                     }
@@ -69,7 +75,7 @@ async function run(){
                     $project: {
                         name: 1,
                         slots: {
-                            $setDifference: ['$slots','$booked']
+                            $setDifference: ['$slots', '$booked']
                         }
                     }
                 }
@@ -77,32 +83,35 @@ async function run(){
             res.send(options);
         })
 
-        app.post('/bookings',async(req,res)=>{
+        app.post('/bookings', async (req, res) => {
             const booking = req.body;
+            console.log(booking);
             const query = {
                 appointmentDate: booking.appointmentDate,
                 email: booking.email,
-                treatment: booking.treatment
+                treatment: booking.treatment 
             }
+
             const alreadyBooked = await bookingsCollection.find(query).toArray();
 
-            if(alreadyBooked.length){
-                const message = `You already have a booking for ${appointmentDate}`;
-                return  res.send({acknowledged: false, message});
+            if (alreadyBooked.length){
+                const message = `You already have a booking on ${booking.appointmentDate}`
+                return res.send({acknowledged: false, message})
             }
 
             const result = await bookingsCollection.insertOne(booking);
             res.send(result);
         })
+
     }
-    finally{
+    finally {
 
     }
 }
 run().catch(console.log);
 
-app.get('/',async(req,res)=>{
-    res.send('doctors portal server');
+app.get('/', async (req, res) => {
+    res.send('doctors portal server is running');
 })
 
-app.listen(port,()=>console.log(`doctors portal on ${port}`));
+app.listen(port, () => console.log(`Doctors portal running on ${port}`))
