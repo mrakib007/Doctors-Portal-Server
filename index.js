@@ -42,6 +42,7 @@ async function run() {
         const appointmentOptionCollection = client.db('doctorsPortal').collection('appointmentOptions');
         const bookingsCollection = client.db('doctorsPortal').collection('bookings');
         const usersCollection = client.db('doctorsPortal').collection('users');
+        const doctorsCollection = client.db('doctorsPortal').collection('doctors');
 
         // Use Aggregate to query multiple collection and then merge data
         app.get('/appointmentOptions', async (req, res) => {
@@ -53,7 +54,6 @@ async function run() {
             const bookingQuery = { appointmentDate: date }
             const alreadyBooked = await bookingsCollection.find(bookingQuery).toArray();
 
-            // code carefully :D
             options.forEach(option => {
                 const optionBooked = alreadyBooked.filter(book => book.treatment === option.name);
                 const bookedSlots = optionBooked.map(book => book.slot);
@@ -106,6 +106,12 @@ async function run() {
                 }
             ]).toArray();
             res.send(options);
+        })
+
+        app.get('/appointmentSpecialty',async(req,res)=>{
+            const query = {};
+            const result = await appointmentOptionCollection.find(query).project({name: 1}).toArray();
+            res.send(result);
         })
 
         app.get('/bookings', verifyJWT, async (req, res) => {
@@ -182,7 +188,7 @@ async function run() {
             }
 
             const id = req.params.id;
-            const filter = { _id: ObjectId(id) }
+            const filter = { _id: new ObjectId(id) }
             const options = { upsert: true };
             const updatedDoc = {
                 $set: {
@@ -191,6 +197,17 @@ async function run() {
             }
             const result = await usersCollection.updateOne(filter, updatedDoc, options);
             res.send(result);
+        });
+
+        app.post('/doctors',async(req,res)=>{
+            const doctor = req.body;
+            const result = await doctorsCollection.insertOne(doctor);
+            res.send(result);
+        });
+        app.get('/doctors',async(req,res)=>{
+            const query = {};
+            const doctors = await doctorsCollection.findOne(query);
+            res.send(doctors);
         })
 
     }
